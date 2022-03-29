@@ -14,3 +14,9 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 *.swp
+*.un~
+*.sol~
+*.go~
+runaot/runaot
+run
+out

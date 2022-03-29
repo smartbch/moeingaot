@@ -425,7 +425,7 @@ func getTraitsTable() (table [256]Traits) {
 	table[OP_PC] = Traits{"PC", 0, 1}
 	table[OP_MSIZE] = Traits{"MSIZE", 0, 1}
 	table[OP_GAS] = Traits{"GAS", 0, 1}
-	table[OP_JUMPDEST] = Traits{"JUMPDEST", 0, 0}
+	table[OP_JUMPDEST] = Traits{"BEGINBLOCK", 0, 0}
 
 	table[OP_PUSH1] = Traits{"PUSH1", 0, 1}
 	table[OP_PUSH2] = Traits{"PUSH2", 0, 1}
@@ -705,8 +705,8 @@ func getInstrTypeTable() (table [256]byte) {
 	table[OP_JUMPI] = Jump
 	table[OP_PC] = Full | Inline
 	table[OP_MSIZE] = StateOnly | Inline
-	table[OP_GAS] = Full | Inline
-	table[OP_JUMPDEST] = FullWithBreak | Inline
+	table[OP_GAS] = Full
+	table[OP_JUMPDEST] = FullWithBreak
 	table[OP_LOG0] = StateWithStatus
 	table[OP_LOG1] = StateWithStatus
 	table[OP_LOG2] = StateWithStatus
@@ -725,24 +725,243 @@ func getInstrTypeTable() (table [256]byte) {
 	return
 }
 
+
+
 func DumpInstrExeFiles() {
 	opTbl := OpTables[EVMC_ISTANBUL]
-	hF := []string{}
-	cF := []string{}
+	hF := []string{`pragma once
+#include "instructions.hpp"
+
+namespace evmone
+{
+namespace
+{
+template <void InstrFn(Stack&)>
+inline const instruction* op(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    InstrFn(state.stack);
+    return ++instr;
+}
+
+template <void InstrFn(ExecutionState&)>
+inline const instruction* op(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    InstrFn(state);
+    return ++instr;
+}
+
+template <evmc_status_code InstrFn(ExecutionState&)>
+inline const instruction* op(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    const auto status_code = InstrFn(state);
+    if (status_code != EVMC_SUCCESS)
+        return state.exit(status_code);
+    return ++instr;
+}
+
+inline const instruction* op_pc(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    state.stack.push(instr->arg.number);
+    return ++instr;
+}
+
+inline const instruction* op_push_small(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    state.stack.push(instr->arg.small_push_value);
+    return ++instr;
+}
+
+inline const instruction* op_push_full(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    state.stack.push(*instr->arg.push_value);
+    return ++instr;
+}
+
+inline bool test_jump_cond(AdvancedExecutionState& state) noexcept {
+	const auto top = state.stack.pop();
+	return top != 0;
+}
+inline size_t pop_target_pc(AdvancedExecutionState& state) noexcept {
+	const auto pc = state.stack.pop();
+	return static_cast<size_t>(pc);
+}
+inline size_t pop_target_pc(AdvancedExecutionState& state) noexcept {
+	const auto pc = state.stack.pop();
+	const auto cond = state.stack.pop();
+	if(cond != 0) return ~size_t(0);
+	return static_cast<size_t>(pc);
+}
+
+const instruction* op_stop(const instruction*, AdvancedExecutionState& state) noexcept;
+const instruction* op_invalid(const instruction*, AdvancedExecutionState& state) noexcept;
+const instruction* op_sstore(const instruction* instr, AdvancedExecutionState& state) noexcept;
+const instruction* op_gas(const instruction* instr, AdvancedExecutionState& state) noexcept;
+template <evmc_status_code status_code>
+const instruction* op_return(const instruction*, AdvancedExecutionState& state) noexcept;
+template <evmc_call_kind Kind, bool Static = false>
+const instruction* op_call(const instruction* instr, AdvancedExecutionState& state) noexcept;
+template <evmc_call_kind Kind>
+const instruction* op_create(const instruction* instr, AdvancedExecutionState& state) noexcept;
+const instruction* op_undefined(const instruction*, AdvancedExecutionState& state) noexcept;
+const instruction* op_selfdestruct(const instruction*, AdvancedExecutionState& state) noexcept;
+const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionState& state) noexcept;
+}
+}
+
+inline evmone::instruction instr_from_block(uint32_t gas_cost, int16_t stack_req, int16_t stack_max_growth) {
+	evmone::instruction instr{};
+	instr.arg.block_info.gas_cost = gas_cost;
+	instr.arg.block_info.stack_req = stack_req;
+	instr.arg.block_info.stack_max_growth = stack_max_growth;
+	return instr;
+}
+inline evmone::instruction instr_from_push(uint64_t v) {
+	evmone::instruction instr{};
+	instr.arg.small_push_value = n;
+	return instr;
+}
+inline evmone::instruction instr_from_push(uint64_t n3, uint64_t n2, uint64_t n1, uint64_t n0) {
+	evmone::instruction instr{};
+	instr.arg.push_value = new intx::uint256;
+	return instr;
+}
+inline evmone::instruction instr_from_num(uint64_t n) {
+	evmone::instruction instr{};
+	instr.arg.number = n;
+	return instr;
+}
+`}
+	cF := []string{`
+#include "instructions.hpp"
+namespace evmone
+{
+namespace
+{
+const instruction* op_stop(const instruction*, AdvancedExecutionState& state) noexcept
+{
+    return state.exit(EVMC_SUCCESS);
+}
+
+const instruction* op_invalid(const instruction*, AdvancedExecutionState& state) noexcept
+{
+    return state.exit(EVMC_INVALID_INSTRUCTION);
+}
+const instruction* op_sstore(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    const auto gas_left_correction = state.current_block_cost - instr->arg.number;
+    state.gas_left += gas_left_correction;
+
+    const auto status = sstore(state);
+    if (status != EVMC_SUCCESS)
+        return state.exit(status);
+
+    if ((state.gas_left -= gas_left_correction) < 0)
+        return state.exit(EVMC_OUT_OF_GAS);
+
+    return ++instr;
+}
+
+const instruction* op_gas(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    const auto correction = state.current_block_cost - instr->arg.number;
+    const auto gas = static_cast<uint64_t>(state.gas_left + correction);
+    state.stack.push(gas);
+    return ++instr;
+}
+
+template <evmc_status_code status_code>
+const instruction* op_return(const instruction*, AdvancedExecutionState& state) noexcept
+{
+    const auto offset = state.stack[0];
+    const auto size = state.stack[1];
+
+    if (!check_memory(state, offset, size))
+        return state.exit(EVMC_OUT_OF_GAS);
+
+    state.output_size = static_cast<size_t>(size);
+    if (state.output_size != 0)
+        state.output_offset = static_cast<size_t>(offset);
+    return state.exit(status_code);
+}
+
+template <evmc_call_kind Kind, bool Static = false>
+const instruction* op_call(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    const auto gas_left_correction = state.current_block_cost - instr->arg.number;
+    state.gas_left += gas_left_correction;
+
+    const auto status = call<Kind, Static>(state);
+    if (status != EVMC_SUCCESS)
+        return state.exit(status);
+
+    if ((state.gas_left -= gas_left_correction) < 0)
+        return state.exit(EVMC_OUT_OF_GAS);
+
+    return ++instr;
+}
+
+template <evmc_call_kind Kind>
+const instruction* op_create(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    const auto gas_left_correction = state.current_block_cost - instr->arg.number;
+    state.gas_left += gas_left_correction;
+
+    const auto status = create<Kind>(state);
+    if (status != EVMC_SUCCESS)
+        return state.exit(status);
+
+    if ((state.gas_left -= gas_left_correction) < 0)
+        return state.exit(EVMC_OUT_OF_GAS);
+
+    return ++instr;
+}
+
+const instruction* op_undefined(const instruction*, AdvancedExecutionState& state) noexcept
+{
+    return state.exit(EVMC_UNDEFINED_INSTRUCTION);
+}
+
+const instruction* op_selfdestruct(const instruction*, AdvancedExecutionState& state) noexcept
+{
+    return state.exit(selfdestruct(state));
+}
+
+const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionState& state) noexcept
+{
+    auto& block = instr->arg.block;
+
+    if ((state.gas_left -= block.gas_cost) < 0)
+        return state.exit(EVMC_OUT_OF_GAS);
+
+    if (static_cast<int>(state.stack.size()) < block.stack_req)
+        return state.exit(EVMC_STACK_UNDERFLOW);
+
+    if (static_cast<int>(state.stack.size()) + block.stack_max_growth > Stack::limit)
+        return state.exit(EVMC_STACK_OVERFLOW);
+
+    state.current_block_cost = block.gas_cost;
+    return ++instr;
+}
+}
+}
+`}
 	fFmt := "const instruction* maot%s(const instruction* instr, AdvancedExecutionState& state) noexcept"
 	for op := 0; op < 256; op++ {
-		if len(TraitsTable[op].Name) == 0 {
-			continue // no such op code
+		if len(TraitsTable[op].Name) == 0 || op == OP_JUMP || op == OP_JUMPI {
+			continue // ignore such op code
 		}
+		sec := fmt.Sprintf("// %d %s\n", op, TraitsTable[op].Name)
+		hF = append(hF, sec)
+		cF = append(cF, sec)
 		fStr := fmt.Sprintf(fFmt, TraitsTable[op].Name)
-		content := fStr+" {\n"+
+		content := fStr+" {\nevmone::"+
 		           opTbl[op].FuncName+"(instr, state);\n"+
-		           "}"
+		           "}\n"
 		if (TypeTable[op] & Inline) == 0 {
-			hF = append(hF, fStr+";")
+			hF = append(hF, fStr+";\n")
 			cF = append(cF, content)
 		} else {
-			hF = append(cF, "inline "+content)
+			hF = append(hF, "inline "+content+";")
 		}
 	}
 	err := os.WriteFile("instrexe.hpp", []byte(strings.Join(hF, "")), 0644)
