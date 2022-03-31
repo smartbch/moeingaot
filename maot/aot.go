@@ -35,6 +35,7 @@ func (ba *BlockAnalysis) Close() BlockInfo {
 }
 
 type Instruction struct {
+	PC             int
 	OpCode         int
 	Number         int
 	PushValue      string
@@ -54,7 +55,6 @@ func (i *Instruction) SetPushValue(bz []byte) {
 
 type AdvancedCodeAnalysis struct {
 	InstrList       []*Instruction
-	JumpdestOffsets []int
 	JumpdestTargets []int
 }
 
@@ -69,7 +69,7 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 	opTbl := OpTables[rev]
 
 	analysis.InstrList = make([]*Instruction, 0, len(codeArr)+1)
-	instr := &Instruction{OpCode: OPX_BEGINBLOCK}
+	instr := &Instruction{OpCode: OPX_BEGINBLOCK, PC: -1}
 	analysis.InstrList = append(analysis.InstrList, instr)
 
 	block := NewBlockAnalysis(0)
@@ -83,10 +83,9 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 		block.StackMaxGrowth = max(block.StackMaxGrowth, block.StackChange)
 		block.GasCost += int(opInfo.GasCost)
 		if opCode == OP_JUMPDEST {
-			analysis.JumpdestOffsets = append(analysis.JumpdestOffsets, codePos-1)
-			analysis.JumpdestTargets = append(analysis.JumpdestTargets, len(analysis.InstrList)-1)
+			analysis.JumpdestTargets = append(analysis.JumpdestTargets, codePos-1)
 		} else {
-			instr := &Instruction{OpCode: int(opCode)}
+			instr := &Instruction{OpCode: int(opCode), PC: codePos-1}
 			analysis.InstrList = append(analysis.InstrList, instr)
 		}
 
@@ -101,7 +100,7 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 			var data [8]byte
 			copy(data[8-int(pushSize):], codeArr[codePos : codePos+int(pushSize)])
 			instr.SmallPushValue = binary.BigEndian.Uint64(data[:])
-			fmt.Printf("Here %d %#v %d\n", pushSize, data[:], instr.SmallPushValue)
+			//fmt.Printf("Here %d %#v %d\n", pushSize, data[:], instr.SmallPushValue)
 			codePos += int(pushSize)
 		case OP_PUSH9, OP_PUSH10, OP_PUSH11, OP_PUSH12,
 			OP_PUSH13, OP_PUSH14, OP_PUSH15, OP_PUSH16,
@@ -122,15 +121,16 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 		lastIdx := len(analysis.InstrList)-2
 		if (opCode == OP_JUMP || opCode == OP_JUMPI) && codePos >= 2 {
 			last := analysis.InstrList[lastIdx]
-			if OP_PUSH1 <= last.OpCode && last.OpCode <= OP_PUSH3 && last.Number != 0 {
-				instr.Number = last.Number
+			if OP_PUSH1 <= last.OpCode && last.OpCode <= OP_PUSH3 && last.SmallPushValue != 0 {
+				fmt.Printf("JJ %d %#v\n", last.SmallPushValue, last)
+				instr.Number = int(last.SmallPushValue)
 				analysis.InstrList[lastIdx].OpCode = NOP
 			}
 		}
 
 		if isTerminator || (codePos < len(codeArr) && codeArr[codePos] == OP_JUMPDEST) {
 			analysis.InstrList[block.BeginBlockIndex].Block = block.Close()
-			instr := &Instruction{OpCode: OPX_BEGINBLOCK}
+			instr := &Instruction{OpCode: OPX_BEGINBLOCK, PC: codePos}
 			analysis.InstrList = append(analysis.InstrList, instr)
 			block = NewBlockAnalysis(len(analysis.InstrList) - 1)
 		}
@@ -138,19 +138,20 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 	// Save current block.
 	analysis.InstrList[block.BeginBlockIndex].Block = block.Close()
 
-	instr = &Instruction{OpCode: OP_STOP}
+	instr = &Instruction{OpCode: OP_STOP, PC: codePos}
 	analysis.InstrList = append(analysis.InstrList, instr)
 	return
 }
 
 func (analysis AdvancedCodeAnalysis) Dump(fout io.Writer) {
-	wr(fout, `#include "instrexe.hpp"
+	wr(fout, `#include <memory>
+#include "instrexe.hpp"
 evmc_result execute(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept
 {
-    auto state = std::make_unique<AdvancedExecutionState>(*msg, rev, *host, ctx, code, code_size);
-    instruction instr;
-    instruction* next_instr = 1 + &instr;
+    auto state = std::make_unique<evmone::AdvancedExecutionState>(*msg, rev, *host, ctx, code, code_size);
+    evmone::instruction instr(nullptr);
+    evmone::instruction* next_instr = 1 + &instr;
     size_t PC = ~size_t(0);
 `)
 	analysis.DumpAllInstr(fout);
@@ -161,53 +162,56 @@ evmc_result execute(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_h
 func (analysis AdvancedCodeAnalysis) DumpJumpTable(fout io.Writer) {
 	wr(fout, "JUMPTABLE:\n")
 	wr(fout, "switch(PC){\n")
-	for i, offset := range analysis.JumpdestOffsets {
-		target := analysis.JumpdestTargets[i]
-		wr(fout, "  case %d: goto L%05d;\n", offset, target)
+	for _, target := range analysis.JumpdestTargets {
+		wr(fout, "  case %d: goto L%05d;\n", target, target)
 	}
 	wr(fout, "  default:\n")
-	wr(fout, "    return state.exit(EVMC_BAD_JUMP_DESTINATION);\n")
+	wr(fout, "    state->exit(EVMC_BAD_JUMP_DESTINATION);\n")
 	wr(fout, `}
 ENDING:
     const auto gas_left =
-        (state.status == EVMC_SUCCESS || state.status == EVMC_REVERT) ? state.gas_left : 0;
+        (state->status == EVMC_SUCCESS || state->status == EVMC_REVERT) ? state->gas_left : 0;
 
     return evmc::make_result(
-        state.status, gas_left, state.memory.data() + state.output_offset, state.output_size);
+        state->status, gas_left, state->memory.data() + state->output_offset, state->output_size);
 }`)
 }
 
 func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
-	for pcPlus1, instr := range analysis.InstrList {
-		pc := pcPlus1 - 1
-		wr(fout, "// pc=%d op=%d (%s)\n", pc, instr.OpCode, TraitsTable[instr.OpCode].Name)
+	for _, instr := range analysis.InstrList {
+		if instr.OpCode == OP_JUMPDEST {
+			wr(fout, "L%05d:\n", instr.PC)
+		}
+		if instr.OpCode == NOP {
+			wr(fout, "// pc=%d NOP\n", instr.PC)
+			continue
+		} else {
+			wr(fout, "// pc=%d op=%d (%s)\n", instr.PC, instr.OpCode, TraitsTable[instr.OpCode].Name)
+		}
 		if instr.OpCode == OP_JUMP && instr.Number != 0 { //Known target
 			wr(fout, "goto L%05d;\n", instr.Number)
 		}
 		if instr.OpCode == OP_JUMPI && instr.Number != 0 { //Known target
-			wr(fout, "if(test_jump_cond(state)) {\n")
+			wr(fout, "if(test_jump_cond(*state)) {\n")
 			wr(fout, "  goto L%05d;\n", instr.Number)
 			wr(fout, "}\n")
 		}
 		if instr.OpCode == OP_JUMP && instr.Number == 0 { //Unknown target
-			wr(fout, "PC=pop_target_pc(state);\ngoto JUMPTABLE;\n")
+			wr(fout, "PC=pop_target_pc(*state);\ngoto JUMPTABLE;\n")
 		}
 		if instr.OpCode == OP_JUMPI && instr.Number == 0 { //Unknown target
-			wr(fout, "PC=(get_target_pc(state));\n")
+			wr(fout, "PC=(get_target_pc(*state));\n")
 			wr(fout, "if((~PC)!=0) goto JUMPTABLE;\n")
 		}
 		if instr.OpCode == OP_JUMP || instr.OpCode == OP_JUMPI {
 			continue
 		}
 		switch instr.OpCode {
-		case NOP:
-			continue
 		case OPX_BEGINBLOCK:
 			wr(fout, "instr=instr_from_block(%d, %d, %d);\n", instr.Block.GasCost,
 				instr.Block.StackReq, instr.Block.StackMaxGrowth)
 		case OP_PUSH1, OP_PUSH2, OP_PUSH3, OP_PUSH4,
 			OP_PUSH5, OP_PUSH6, OP_PUSH7, OP_PUSH8:
-			fmt.Printf("Haha %d\n", instr.SmallPushValue)
 			wr(fout, "instr=instr_from_push(%d);\n", instr.SmallPushValue)
 		case OP_PUSH9, OP_PUSH10, OP_PUSH11, OP_PUSH12,
 			OP_PUSH13, OP_PUSH14, OP_PUSH15, OP_PUSH16,
@@ -222,11 +226,11 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 		}
 		name := TraitsTable[instr.OpCode].Name
 		if t := TypeTable[instr.OpCode]; t == FullWithBreak || t == StateWithStatus {
-			wr(fout, "if(next_instr!=maot%s(&instr, state)) goto ENDING;\n", name)
+			wr(fout, "if(next_instr!=maot%s(&instr, *state)) goto ENDING;\n", name)
 		} else if len(name) == 0 {
-			wr(fout, "evmone::op_undefined(&instr, state);\ngoto ENDING;\n")
+			wr(fout, "evmone::op_undefined(&instr, *state);\ngoto ENDING;\n")
 		} else {
-			wr(fout, "maot%s(&instr, state);\n", name)
+			wr(fout, "maot%s(&instr, *state);\n", name)
 		}
 	}
 }

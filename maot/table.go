@@ -515,70 +515,70 @@ func getTraitsTable() (table [256]Traits) {
 
 func getFuncNameTable() (table [256]string) {
 	table[OP_STOP] = "op_stop"
-	table[OP_ADD] = "op<add>"
-	table[OP_MUL] = "op<mul>"
-	table[OP_SUB] = "op<sub>"
-	table[OP_DIV] = "op<div>"
-	table[OP_SDIV] = "op<sdiv>"
-	table[OP_MOD] = "op<mod>"
-	table[OP_SMOD] = "op<smod>"
-	table[OP_ADDMOD] = "op<addmod>"
-	table[OP_MULMOD] = "op<mulmod>"
-	table[OP_EXP] = "op<exp>"
-	table[OP_SIGNEXTEND] = "op<signextend>"
-	table[OP_LT] = "op<lt>"
-	table[OP_GT] = "op<gt>"
-	table[OP_SLT] = "op<slt>"
-	table[OP_SGT] = "op<sgt>"
-	table[OP_EQ] = "op<eq>"
-	table[OP_ISZERO] = "op<iszero>"
-	table[OP_AND] = "op<and_>"
-	table[OP_OR] = "op<or_>"
-	table[OP_XOR] = "op<xor_>"
-	table[OP_NOT] = "op<not_>"
-	table[OP_BYTE] = "op<byte>"
-	table[OP_SHL] = "op<shl>"
-	table[OP_SHR] = "op<shr>"
-	table[OP_SAR] = "op<sar>"
+	table[OP_ADD] = "op<evmone::add>"
+	table[OP_MUL] = "op<evmone::mul>"
+	table[OP_SUB] = "op<evmone::sub>"
+	table[OP_DIV] = "op<evmone::div>"
+	table[OP_SDIV] = "op<evmone::sdiv>"
+	table[OP_MOD] = "op<evmone::mod>"
+	table[OP_SMOD] = "op<evmone::smod>"
+	table[OP_ADDMOD] = "op<evmone::addmod>"
+	table[OP_MULMOD] = "op<evmone::mulmod>"
+	table[OP_EXP] = "op<evmone::exp>"
+	table[OP_SIGNEXTEND] = "op<evmone::signextend>"
+	table[OP_LT] = "op<evmone::lt>"
+	table[OP_GT] = "op<evmone::gt>"
+	table[OP_SLT] = "op<evmone::slt>"
+	table[OP_SGT] = "op<evmone::sgt>"
+	table[OP_EQ] = "op<evmone::eq>"
+	table[OP_ISZERO] = "op<evmone::iszero>"
+	table[OP_AND] = "op<evmone::and_>"
+	table[OP_OR] = "op<evmone::or_>"
+	table[OP_XOR] = "op<evmone::xor_>"
+	table[OP_NOT] = "op<evmone::not_>"
+	table[OP_BYTE] = "op<evmone::byte>"
+	table[OP_SHL] = "op<evmone::shl>"
+	table[OP_SHR] = "op<evmone::shr>"
+	table[OP_SAR] = "op<evmone::sar>"
 
-	table[OP_KECCAK256] = "op<keccak256>"
+	table[OP_KECCAK256] = "op<evmone::keccak256>"
 
-	table[OP_ADDRESS] = "op<address>"
-	table[OP_BALANCE] = "op<balance>"
-	table[OP_ORIGIN] = "op<origin>"
-	table[OP_CALLER] = "op<caller>"
-	table[OP_CALLVALUE] = "op<callvalue>"
-	table[OP_CALLDATALOAD] = "op<calldataload>"
-	table[OP_CALLDATASIZE] = "op<calldatasize>"
-	table[OP_CALLDATACOPY] = "op<calldatacopy>"
-	table[OP_CODESIZE] = "op<codesize>"
-	table[OP_CODECOPY] = "op<codecopy>"
-	table[OP_GASPRICE] = "op<gasprice>"
-	table[OP_EXTCODESIZE] = "op<extcodesize>"
-	table[OP_EXTCODECOPY] = "op<extcodecopy>"
-	table[OP_RETURNDATASIZE] = "op<returndatasize>"
-	table[OP_RETURNDATACOPY] = "op<returndatacopy>"
-	table[OP_EXTCODEHASH] = "op<extcodehash>"
-	table[OP_BLOCKHASH] = "op<blockhash>"
-	table[OP_COINBASE] = "op<coinbase>"
-	table[OP_TIMESTAMP] = "op<timestamp>"
-	table[OP_NUMBER] = "op<number>"
-	table[OP_DIFFICULTY] = "op<difficulty>"
-	table[OP_GASLIMIT] = "op<gaslimit>"
-	table[OP_CHAINID] = "op<chainid>"
-	table[OP_SELFBALANCE] = "op<selfbalance>"
-	table[OP_BASEFEE] = "op<basefee>"
+	table[OP_ADDRESS] = "op<evmone::address>"
+	table[OP_BALANCE] = "op<evmone::balance>"
+	table[OP_ORIGIN] = "op<evmone::origin>"
+	table[OP_CALLER] = "op<evmone::caller>"
+	table[OP_CALLVALUE] = "op<evmone::callvalue>"
+	table[OP_CALLDATALOAD] = "op<evmone::calldataload>"
+	table[OP_CALLDATASIZE] = "op<evmone::calldatasize>"
+	table[OP_CALLDATACOPY] = "op<evmone::calldatacopy>"
+	table[OP_CODESIZE] = "op<evmone::codesize>"
+	table[OP_CODECOPY] = "op<evmone::codecopy>"
+	table[OP_GASPRICE] = "op<evmone::gasprice>"
+	table[OP_EXTCODESIZE] = "op<evmone::extcodesize>"
+	table[OP_EXTCODECOPY] = "op<evmone::extcodecopy>"
+	table[OP_RETURNDATASIZE] = "op<evmone::returndatasize>"
+	table[OP_RETURNDATACOPY] = "op<evmone::returndatacopy>"
+	table[OP_EXTCODEHASH] = "op<evmone::extcodehash>"
+	table[OP_BLOCKHASH] = "op<evmone::blockhash>"
+	table[OP_COINBASE] = "op<evmone::coinbase>"
+	table[OP_TIMESTAMP] = "op<evmone::timestamp>"
+	table[OP_NUMBER] = "op<evmone::number>"
+	table[OP_DIFFICULTY] = "op<evmone::difficulty>"
+	table[OP_GASLIMIT] = "op<evmone::gaslimit>"
+	table[OP_CHAINID] = "op<evmone::chainid>"
+	table[OP_SELFBALANCE] = "op<evmone::selfbalance>"
+	table[OP_BASEFEE] = "op<evmone::basefee>"
 
-	table[OP_POP] = "op<pop>"
-	table[OP_MLOAD] = "op<mload>"
-	table[OP_MSTORE] = "op<mstore>"
-	table[OP_MSTORE8] = "op<mstore8>"
-	table[OP_SLOAD] = "op<sload>"
+	table[OP_POP] = "op<evmone::pop>"
+	table[OP_MLOAD] = "op<evmone::mload>"
+	table[OP_MSTORE] = "op<evmone::mstore>"
+	table[OP_MSTORE8] = "op<evmone::mstore8>"
+	table[OP_SLOAD] = "op<evmone::sload>"
 	table[OP_SSTORE] = "op_sstore"
 	table[OP_JUMP] = "op_jump"
 	table[OP_JUMPI] = "op_jumpi"
 	table[OP_PC] = "op_pc"
-	table[OP_MSIZE] = "op<msize>"
+	table[OP_MSIZE] = "op<evmone::msize>"
 	table[OP_GAS] = "op_gas"
 	table[OPX_BEGINBLOCK] = "opx_beginblock"
 
@@ -589,45 +589,45 @@ func getFuncNameTable() (table [256]string) {
 		table[op] = "op_push_full"
 	}
 
-	table[OP_DUP1] = "op<dup<1>>"
-	table[OP_DUP2] = "op<dup<2>>"
-	table[OP_DUP3] = "op<dup<3>>"
-	table[OP_DUP4] = "op<dup<4>>"
-	table[OP_DUP5] = "op<dup<5>>"
-	table[OP_DUP6] = "op<dup<6>>"
-	table[OP_DUP7] = "op<dup<7>>"
-	table[OP_DUP8] = "op<dup<8>>"
-	table[OP_DUP9] = "op<dup<9>>"
-	table[OP_DUP10] = "op<dup<10>>"
-	table[OP_DUP11] = "op<dup<11>>"
-	table[OP_DUP12] = "op<dup<12>>"
-	table[OP_DUP13] = "op<dup<13>>"
-	table[OP_DUP14] = "op<dup<14>>"
-	table[OP_DUP15] = "op<dup<15>>"
-	table[OP_DUP16] = "op<dup<16>>"
+	table[OP_DUP1] = "op<evmone::dup<1>>"
+	table[OP_DUP2] = "op<evmone::dup<2>>"
+	table[OP_DUP3] = "op<evmone::dup<3>>"
+	table[OP_DUP4] = "op<evmone::dup<4>>"
+	table[OP_DUP5] = "op<evmone::dup<5>>"
+	table[OP_DUP6] = "op<evmone::dup<6>>"
+	table[OP_DUP7] = "op<evmone::dup<7>>"
+	table[OP_DUP8] = "op<evmone::dup<8>>"
+	table[OP_DUP9] = "op<evmone::dup<9>>"
+	table[OP_DUP10] = "op<evmone::dup<10>>"
+	table[OP_DUP11] = "op<evmone::dup<11>>"
+	table[OP_DUP12] = "op<evmone::dup<12>>"
+	table[OP_DUP13] = "op<evmone::dup<13>>"
+	table[OP_DUP14] = "op<evmone::dup<14>>"
+	table[OP_DUP15] = "op<evmone::dup<15>>"
+	table[OP_DUP16] = "op<evmone::dup<16>>"
 
-	table[OP_SWAP1] = "op<swap<1>>"
-	table[OP_SWAP2] = "op<swap<2>>"
-	table[OP_SWAP3] = "op<swap<3>>"
-	table[OP_SWAP4] = "op<swap<4>>"
-	table[OP_SWAP5] = "op<swap<5>>"
-	table[OP_SWAP6] = "op<swap<6>>"
-	table[OP_SWAP7] = "op<swap<7>>"
-	table[OP_SWAP8] = "op<swap<8>>"
-	table[OP_SWAP9] = "op<swap<9>>"
-	table[OP_SWAP10] = "op<swap<10>>"
-	table[OP_SWAP11] = "op<swap<11>>"
-	table[OP_SWAP12] = "op<swap<12>>"
-	table[OP_SWAP13] = "op<swap<13>>"
-	table[OP_SWAP14] = "op<swap<14>>"
-	table[OP_SWAP15] = "op<swap<15>>"
-	table[OP_SWAP16] = "op<swap<16>>"
+	table[OP_SWAP1] = "op<evmone::swap<1>>"
+	table[OP_SWAP2] = "op<evmone::swap<2>>"
+	table[OP_SWAP3] = "op<evmone::swap<3>>"
+	table[OP_SWAP4] = "op<evmone::swap<4>>"
+	table[OP_SWAP5] = "op<evmone::swap<5>>"
+	table[OP_SWAP6] = "op<evmone::swap<6>>"
+	table[OP_SWAP7] = "op<evmone::swap<7>>"
+	table[OP_SWAP8] = "op<evmone::swap<8>>"
+	table[OP_SWAP9] = "op<evmone::swap<9>>"
+	table[OP_SWAP10] = "op<evmone::swap<10>>"
+	table[OP_SWAP11] = "op<evmone::swap<11>>"
+	table[OP_SWAP12] = "op<evmone::swap<12>>"
+	table[OP_SWAP13] = "op<evmone::swap<13>>"
+	table[OP_SWAP14] = "op<evmone::swap<14>>"
+	table[OP_SWAP15] = "op<evmone::swap<15>>"
+	table[OP_SWAP16] = "op<evmone::swap<16>>"
 
-	table[OP_LOG0] = "op<log<0>>"
-	table[OP_LOG1] = "op<log<1>>"
-	table[OP_LOG2] = "op<log<2>>"
-	table[OP_LOG3] = "op<log<3>>"
-	table[OP_LOG4] = "op<log<4>>"
+	table[OP_LOG0] = "op<evmone::log<0>>"
+	table[OP_LOG1] = "op<evmone::log<1>>"
+	table[OP_LOG2] = "op<evmone::log<2>>"
+	table[OP_LOG3] = "op<evmone::log<3>>"
+	table[OP_LOG4] = "op<evmone::log<4>>"
 
 	table[OP_CREATE] = "op_create<EVMC_CREATE>"
 	table[OP_CALL] = "op_call<EVMC_CALL>"
@@ -729,12 +729,11 @@ func getInstrTypeTable() (table [256]byte) {
 
 func DumpInstrExeFiles() {
 	opTbl := OpTables[EVMC_ISTANBUL]
-	hF := []string{`pragma once
+	hF := []string{`#pragma once
+#include "analysis.hpp"
 #include "instructions.hpp"
 
 namespace evmone
-{
-namespace
 {
 template <void InstrFn(Stack&)>
 inline const instruction* op(const instruction* instr, AdvancedExecutionState& state) noexcept
@@ -785,7 +784,7 @@ inline size_t pop_target_pc(AdvancedExecutionState& state) noexcept {
 	const auto pc = state.stack.pop();
 	return static_cast<size_t>(pc);
 }
-inline size_t pop_target_pc(AdvancedExecutionState& state) noexcept {
+inline size_t get_target_pc(AdvancedExecutionState& state) noexcept {
 	const auto pc = state.stack.pop();
 	const auto cond = state.stack.pop();
 	if(cond != 0) return ~size_t(0);
@@ -806,36 +805,33 @@ const instruction* op_undefined(const instruction*, AdvancedExecutionState& stat
 const instruction* op_selfdestruct(const instruction*, AdvancedExecutionState& state) noexcept;
 const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionState& state) noexcept;
 }
-}
 
 inline evmone::instruction instr_from_block(uint32_t gas_cost, int16_t stack_req, int16_t stack_max_growth) {
-	evmone::instruction instr{};
-	instr.arg.block_info.gas_cost = gas_cost;
-	instr.arg.block_info.stack_req = stack_req;
-	instr.arg.block_info.stack_max_growth = stack_max_growth;
+	evmone::instruction instr(nullptr);
+	instr.arg.block.gas_cost = gas_cost;
+	instr.arg.block.stack_req = stack_req;
+	instr.arg.block.stack_max_growth = stack_max_growth;
 	return instr;
 }
 inline evmone::instruction instr_from_push(uint64_t v) {
-	evmone::instruction instr{};
-	instr.arg.small_push_value = n;
+	evmone::instruction instr(nullptr);
+	instr.arg.small_push_value = v;
 	return instr;
 }
 inline evmone::instruction instr_from_push(uint64_t n3, uint64_t n2, uint64_t n1, uint64_t n0) {
-	evmone::instruction instr{};
+	evmone::instruction instr(nullptr);
 	instr.arg.push_value = new intx::uint256;
 	return instr;
 }
 inline evmone::instruction instr_from_num(uint64_t n) {
-	evmone::instruction instr{};
+	evmone::instruction instr(nullptr);
 	instr.arg.number = n;
 	return instr;
 }
 `}
 	cF := []string{`
-#include "instructions.hpp"
+#include "instrexe.hpp"
 namespace evmone
-{
-namespace
 {
 const instruction* op_stop(const instruction*, AdvancedExecutionState& state) noexcept
 {
@@ -943,9 +939,8 @@ const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionSta
     return ++instr;
 }
 }
-}
 `}
-	fFmt := "const instruction* maot%s(const instruction* instr, AdvancedExecutionState& state) noexcept"
+	fFmt := "const evmone::instruction* maot%s(const evmone::instruction* instr, evmone::AdvancedExecutionState& state) noexcept"
 	for op := 0; op < 256; op++ {
 		if len(TraitsTable[op].Name) == 0 || op == OP_JUMP || op == OP_JUMPI {
 			continue // ignore such op code
@@ -956,7 +951,7 @@ const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionSta
 		fStr := fmt.Sprintf(fFmt, TraitsTable[op].Name)
 		content := fStr+" {\nevmone::"+
 		           opTbl[op].FuncName+"(instr, state);\n"+
-		           "}\n"
+		           "return nullptr;\n}\n"
 		if (TypeTable[op] & Inline) == 0 {
 			hF = append(hF, fStr+";\n")
 			cF = append(cF, content)
