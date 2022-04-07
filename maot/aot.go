@@ -179,7 +179,7 @@ ENDING:
 
 func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 	for _, instr := range analysis.InstrList {
-		if instr.OpCode == OP_JUMPDEST {
+		if instr.OpCode == OP_JUMPDEST && instr.PC > 0 {
 			wr(fout, "L%05d:\n", instr.PC)
 		}
 		if instr.OpCode == NOP {
