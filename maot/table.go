@@ -3,6 +3,7 @@ package maot
 import (
 	"fmt"
 	"os"
+	"path"
 	"strings"
 )
 
@@ -727,7 +728,7 @@ func getInstrTypeTable() (table [256]byte) {
 
 
 
-func DumpInstrExeFiles() {
+func DumpInstrExeFiles(dir string) {
 	opTbl := OpTables[EVMC_ISTANBUL]
 	hF := []string{`#pragma once
 #include "analysis.hpp"
@@ -959,11 +960,11 @@ const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionSta
 			hF = append(hF, "inline "+content+";")
 		}
 	}
-	err := os.WriteFile("instrexe.hpp", []byte(strings.Join(hF, "")), 0644)
+	err := os.WriteFile(path.Join(dir, "instrexe.hpp"), []byte(strings.Join(hF, "")), 0644)
 	if err != nil {
 		panic(err)
 	}
-	err = os.WriteFile("instrexe.cpp", []byte(strings.Join(cF, "")), 0644)
+	err = os.WriteFile(path.Join(dir, "instrexe.cpp"), []byte(strings.Join(cF, "")), 0644)
 	if err != nil {
 		panic(err)
 	}

@@ -1,7 +1,9 @@
 pragma solidity 0.8.13;
 
 contract babylon {
-    function sqrt(uint y) external pure returns (uint z) {
+    uint public result;
+    function sqrt(uint y) external {
+        uint z;
         if (y > 3) {
             z = y;
             uint x = y / 2 + 1;
@@ -12,5 +14,6 @@ contract babylon {
         } else if (y != 0) {
             z = 1;
         }
+        result = z;
     }
 }

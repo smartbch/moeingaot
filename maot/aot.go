@@ -1,11 +1,15 @@
 package maot
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
-
-	"encoding/binary"
+	"path"
+	"strings"
+	"sort"
 )
 
 type BlockInfo struct {
@@ -122,7 +126,6 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 		if (opCode == OP_JUMP || opCode == OP_JUMPI) && codePos >= 2 {
 			last := analysis.InstrList[lastIdx]
 			if OP_PUSH1 <= last.OpCode && last.OpCode <= OP_PUSH3 && last.SmallPushValue != 0 {
-				fmt.Printf("JJ %d %#v\n", last.SmallPushValue, last)
 				instr.Number = int(last.SmallPushValue)
 				analysis.InstrList[lastIdx].OpCode = NOP
 			}
@@ -143,17 +146,21 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 	return
 }
 
-func (analysis AdvancedCodeAnalysis) Dump(fout io.Writer) {
-	wr(fout, `#include <memory>
+func (analysis AdvancedCodeAnalysis) Dump(name string, fout io.Writer) {
+	wr(fout, fmt.Sprintf(`#include <memory>
 #include "instrexe.hpp"
-evmc_result execute(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
+extern "C" {
+evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
+    evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;
+}
+evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept
 {
     auto state = std::make_unique<evmone::AdvancedExecutionState>(*msg, rev, *host, ctx, code, code_size);
     evmone::instruction instr(nullptr);
     evmone::instruction* next_instr = 1 + &instr;
     size_t PC = ~size_t(0);
-`)
+`, name, name))
 	analysis.DumpAllInstr(fout);
 	analysis.DumpJumpTable(fout);
 	wr(fout, "}\n")
@@ -174,7 +181,7 @@ ENDING:
 
     return evmc::make_result(
         state->status, gas_left, state->memory.data() + state->output_offset, state->output_size);
-}`)
+`)
 }
 
 func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
@@ -243,14 +250,121 @@ func wr(fout io.Writer, line string, a ...any) {
 	}
 }
 
-func CodeToFile(rev int, codeArr []byte) {
-	fout, err := os.Create("contract.cpp")
+func CodeToFile(rev int, codeArr []byte, name, fname string) {
+	fout, err := os.Create(fname)
 	if err != nil {
 		panic(err)
 	}
 	analysis := Analyze(rev, codeArr)
-	analysis.Dump(fout)
+	analysis.Dump(name, fout)
 	err = fout.Close()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func readFiles(dir string) (codeMap map[string][]byte) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		panic(err)
+	}
+	codeMap = make(map[string][]byte, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		content, err := ioutil.ReadFile(path.Join(dir, entry.Name()))
+		if err != nil {
+			panic(err)
+		}
+
+		codeMap[entry.Name()], err = hex.DecodeString(strings.TrimSpace(string(content)))
+		if err != nil {
+			fmt.Printf("f %s %s '%s'\n", dir, entry.Name(), strings.TrimSpace(string(content)))
+			panic(err)
+		}
+	}
+	return
+}
+
+func getQueryExecutorSrc(nameList []string) string {
+	lines := make([]string, 0, 100)
+	lines = append(lines, `
+#include <string>
+#include <unordered_map>
+#include "evmc/evmc.h"
+
+extern "C" {
+__attribute__ ((visibility ("default"))) evmc_execute_fn query_executor(const evmc_address* destination);
+`)
+	for _, name := range nameList {
+		s := fmt.Sprintf(`evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
+    evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;`, name)
+		lines = append(lines, s)
+	}
+	lines = append(lines, `
+}
+
+evmc_execute_fn query_executor(const evmc_address* destination) {
+	static std::unordered_map<std::string, evmc_execute_fn> m;
+	if(m.size() == 0) { //initialized on first called`)
+
+	s := fmt.Sprintf("\t\tm.reserve(%d);", len(nameList))
+	lines = append(lines, s)
+	for _, name := range nameList {
+		s = fmt.Sprintf("\t\tm.insert(std::make_pair<std::string, evmc_execute_fn>(\"%s\", execute_%s));", name, name)
+		lines = append(lines, s)
+	}
+	lines = append(lines, "\t}")
+	lines = append(lines, `
+	std::string key((const char*)(destination->bytes), 20);
+	auto got = m.find(key);
+	if(got == m.end()) return nullptr;
+	return got->second;
+}
+`)
+	return strings.Join(lines, "\n")
+}
+
+func getCompileScript(nameList []string) string {
+	lines := make([]string, 0, 100)
+	lines = append(lines, "#!/bin/bash")
+	lines = append(lines, "export MOEINGEVM="+os.Getenv("MOEINGEVM"))
+	cmd := "g++ -fPIC -std=c++17 -I $MOEINGEVM/evmwrap/evmone.release/ -I $MOEINGEVM/evmwrap/evmc/include/ -I $MOEINGEVM/evmwrap/intx/include -I $MOEINGEVM/evmwrap/keccak/include"
+	fileNames := make([]string, 0, len(nameList))
+	for _, name := range nameList {
+		lines = append(lines, "echo === "+name+" ===")
+		lines = append(lines, cmd+" -c "+name+".cpp")
+		fileNames = append(fileNames, name+".o")
+	}
+	lines = append(lines, cmd+" -c instrexe.cpp")
+	last := cmd+" -shared -fvisibility=hidden -o libevmaot.so query_executor.cpp instrexe.o "+strings.Join(fileNames, " ")
+	lines = append(lines, last)
+	return strings.Join(lines, "\n")
+}
+
+func AotCompile(rev int, inDir string, outDir string) {
+	codeMap := readFiles(inDir)
+	nameList := make([]string, 0, len(codeMap))
+	for name := range codeMap {
+		nameList = append(nameList, name)
+	}
+	sort.Strings(nameList)
+	for _, name := range nameList {
+		codeArr := codeMap[name]
+		ofile := path.Join(outDir, name+".cpp")
+		CodeToFile(rev, codeArr, name, ofile)
+	}
+	src := getQueryExecutorSrc(nameList)
+	ofile := path.Join(outDir, "query_executor.cpp")
+	err := ioutil.WriteFile(ofile, []byte(src), 0644)
+	if err != nil {
+		panic(err)
+	}
+	DumpInstrExeFiles(outDir)
+	src = getCompileScript(nameList)
+	ofile = path.Join(outDir, "compile.sh")
+	err = ioutil.WriteFile(ofile, []byte(src), 0644)
 	if err != nil {
 		panic(err)
 	}
