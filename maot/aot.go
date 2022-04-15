@@ -60,6 +60,7 @@ func (i *Instruction) SetPushValue(bz []byte) {
 type AdvancedCodeAnalysis struct {
 	InstrList       []*Instruction
 	JumpdestTargets []int
+	TargetsSet      map[int]struct{}
 }
 
 func max(a, b int) int {
@@ -72,6 +73,7 @@ func max(a, b int) int {
 func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 	opTbl := OpTables[rev]
 
+	analysis.TargetsSet = make(map[int]struct{})
 	analysis.InstrList = make([]*Instruction, 0, len(codeArr)+1)
 	instr := &Instruction{OpCode: OPX_BEGINBLOCK, PC: -1}
 	analysis.InstrList = append(analysis.InstrList, instr)
@@ -86,8 +88,10 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 		block.StackChange += int(opInfo.StackChange)
 		block.StackMaxGrowth = max(block.StackMaxGrowth, block.StackChange)
 		block.GasCost += int(opInfo.GasCost)
+		//fmt.Printf("Now pos %d GasCost %d %d\n", codePos-1, block.GasCost, opInfo.GasCost)
 		if opCode == OP_JUMPDEST {
 			analysis.JumpdestTargets = append(analysis.JumpdestTargets, codePos-1)
+			analysis.TargetsSet[codePos-1] = struct{}{}
 		} else {
 			instr := &Instruction{OpCode: int(opCode), PC: codePos-1}
 			analysis.InstrList = append(analysis.InstrList, instr)
@@ -133,6 +137,7 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 
 		if isTerminator || (codePos < len(codeArr) && codeArr[codePos] == OP_JUMPDEST) {
 			analysis.InstrList[block.BeginBlockIndex].Block = block.Close()
+			//fmt.Printf("At Close %d %#v\n", block.BeginBlockIndex, analysis.InstrList[block.BeginBlockIndex].Block)
 			instr := &Instruction{OpCode: OPX_BEGINBLOCK, PC: codePos}
 			analysis.InstrList = append(analysis.InstrList, instr)
 			block = NewBlockAnalysis(len(analysis.InstrList) - 1)
@@ -148,6 +153,7 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 
 func (analysis AdvancedCodeAnalysis) Dump(name string, fout io.Writer) {
 	wr(fout, fmt.Sprintf(`#include <memory>
+#include <iostream>
 #include "instrexe.hpp"
 extern "C" {
 evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
@@ -194,13 +200,22 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			continue
 		} else {
 			wr(fout, "// pc=%d op=%d (%s)\n", instr.PC, instr.OpCode, TraitsTable[instr.OpCode].Name)
+			//wr(fout, "std::cout<<\"pc=%d gas 0x\"<<std::hex<<state->gas_left<<std::endl;\n", instr.PC)
 		}
 		if instr.OpCode == OP_JUMP && instr.Number != 0 { //Known target
-			wr(fout, "goto L%05d;\n", instr.Number)
+			if _, ok := analysis.TargetsSet[instr.Number]; ok {
+				wr(fout, "goto L%05d;\n", instr.Number)
+			} else {
+				wr(fout, "state->exit(EVMC_BAD_JUMP_DESTINATION); goto ENDING;//%05d", instr.Number)
+			}
 		}
 		if instr.OpCode == OP_JUMPI && instr.Number != 0 { //Known target
 			wr(fout, "if(test_jump_cond(*state)) {\n")
-			wr(fout, "  goto L%05d;\n", instr.Number)
+			if _, ok := analysis.TargetsSet[instr.Number]; ok {
+				wr(fout, "  goto L%05d;\n", instr.Number)
+			} else {
+				wr(fout, "  state->exit(EVMC_BAD_JUMP_DESTINATION); goto ENDING;//%05d", instr.Number)
+			}
 			wr(fout, "}\n")
 		}
 		if instr.OpCode == OP_JUMP && instr.Number == 0 { //Unknown target
@@ -287,7 +302,15 @@ func readFiles(dir string) (codeMap map[string][]byte) {
 	return
 }
 
-func getQueryExecutorSrc(nameList []string) string {
+func addr2str(addr string) string {
+	res := ""
+	for i := 0; i < len(addr); i+=2 {
+		res += "\\x"+addr[i:i+2]
+	}
+	return res
+}
+
+func getQueryExecutorSrc(addrList []string) string {
 	lines := make([]string, 0, 100)
 	lines = append(lines, `
 #include <string>
@@ -297,9 +320,9 @@ func getQueryExecutorSrc(nameList []string) string {
 extern "C" {
 __attribute__ ((visibility ("default"))) evmc_execute_fn query_executor(const evmc_address* destination);
 `)
-	for _, name := range nameList {
+	for _, addr := range addrList {
 		s := fmt.Sprintf(`evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
-    evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;`, name)
+    evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;`, addr)
 		lines = append(lines, s)
 	}
 	lines = append(lines, `
@@ -309,10 +332,11 @@ evmc_execute_fn query_executor(const evmc_address* destination) {
 	static std::unordered_map<std::string, evmc_execute_fn> m;
 	if(m.size() == 0) { //initialized on first called`)
 
-	s := fmt.Sprintf("\t\tm.reserve(%d);", len(nameList))
+	s := fmt.Sprintf("\t\tm.reserve(%d);", len(addrList))
 	lines = append(lines, s)
-	for _, name := range nameList {
-		s = fmt.Sprintf("\t\tm.insert(std::make_pair<std::string, evmc_execute_fn>(\"%s\", execute_%s));", name, name)
+	for _, addr := range addrList {
+		s = fmt.Sprintf("\t\tm.insert(std::make_pair<std::string, evmc_execute_fn>(\"%s\", execute_%s));",
+			addr2str(addr), addr)
 		lines = append(lines, s)
 	}
 	lines = append(lines, "\t}")
@@ -326,16 +350,16 @@ evmc_execute_fn query_executor(const evmc_address* destination) {
 	return strings.Join(lines, "\n")
 }
 
-func getCompileScript(nameList []string) string {
+func getCompileScript(addrList []string) string {
 	lines := make([]string, 0, 100)
 	lines = append(lines, "#!/bin/bash")
 	lines = append(lines, "export MOEINGEVM="+os.Getenv("MOEINGEVM"))
-	cmd := "g++ -fPIC -std=c++17 -I $MOEINGEVM/evmwrap/evmone.release/ -I $MOEINGEVM/evmwrap/evmc/include/ -I $MOEINGEVM/evmwrap/intx/include -I $MOEINGEVM/evmwrap/keccak/include"
-	fileNames := make([]string, 0, len(nameList))
-	for _, name := range nameList {
-		lines = append(lines, "echo === "+name+" ===")
-		lines = append(lines, cmd+" -c "+name+".cpp")
-		fileNames = append(fileNames, name+".o")
+	cmd := "g++ -O3 -fPIC -std=c++17 -I $MOEINGEVM/evmwrap/evmone.release/ -I $MOEINGEVM/evmwrap/evmc/include/ -I $MOEINGEVM/evmwrap/intx/include -I $MOEINGEVM/evmwrap/keccak/include"
+	fileNames := make([]string, 0, len(addrList))
+	for _, addr := range addrList {
+		lines = append(lines, "echo === "+addr+" ===")
+		lines = append(lines, cmd+" -c "+addr+".cpp")
+		fileNames = append(fileNames, addr+".o")
 	}
 	lines = append(lines, cmd+" -c instrexe.cpp")
 	last := cmd+" -shared -fvisibility=hidden -o libevmaot.so query_executor.cpp instrexe.o "+strings.Join(fileNames, " ")
@@ -345,24 +369,24 @@ func getCompileScript(nameList []string) string {
 
 func AotCompile(rev int, inDir string, outDir string) {
 	codeMap := readFiles(inDir)
-	nameList := make([]string, 0, len(codeMap))
-	for name := range codeMap {
-		nameList = append(nameList, name)
+	addrList := make([]string, 0, len(codeMap))
+	for addr := range codeMap {
+		addrList = append(addrList, addr)
 	}
-	sort.Strings(nameList)
-	for _, name := range nameList {
-		codeArr := codeMap[name]
-		ofile := path.Join(outDir, name+".cpp")
-		CodeToFile(rev, codeArr, name, ofile)
+	sort.Strings(addrList)
+	for _, addr := range addrList {
+		codeArr := codeMap[addr]
+		ofile := path.Join(outDir, addr+".cpp")
+		CodeToFile(rev, codeArr, addr, ofile)
 	}
-	src := getQueryExecutorSrc(nameList)
+	src := getQueryExecutorSrc(addrList)
 	ofile := path.Join(outDir, "query_executor.cpp")
 	err := ioutil.WriteFile(ofile, []byte(src), 0644)
 	if err != nil {
 		panic(err)
 	}
 	DumpInstrExeFiles(outDir)
-	src = getCompileScript(nameList)
+	src = getCompileScript(addrList)
 	ofile = path.Join(outDir, "compile.sh")
 	err = ioutil.WriteFile(ofile, []byte(src), 0644)
 	if err != nil {

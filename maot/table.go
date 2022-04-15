@@ -215,6 +215,7 @@ func init() {
 			if cost == Undefined {
 				table[i].FuncName = "op_undefined"
 			} else {
+				table[i].GasCost = uint32(cost)
 				table[i].FuncName = FuncNameTable[i]
 				table[i].StackReq = TraitsTable[i].StackReq
 				table[i].StackChange = TraitsTable[i].StackChange
@@ -950,14 +951,13 @@ const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionSta
 		hF = append(hF, sec)
 		cF = append(cF, sec)
 		fStr := fmt.Sprintf(fFmt, TraitsTable[op].Name)
-		content := fStr+" {\nevmone::"+
-		           opTbl[op].FuncName+"(instr, state);\n"+
-		           "return nullptr;\n}\n"
-		if (TypeTable[op] & Inline) == 0 {
+		content := fStr+" {\nreturn evmone::"+
+		           opTbl[op].FuncName+"(instr, state);\n}\n"
+		if (TypeTable[op] & Inline) != 0 || (OP_PUSH1 <= op && op <= OP_SWAP16) {
+			hF = append(hF, "inline "+content+";")
+		} else {
 			hF = append(hF, fStr+";\n")
 			cF = append(cF, content)
-		} else {
-			hF = append(hF, "inline "+content+";")
 		}
 	}
 	err := os.WriteFile(path.Join(dir, "instrexe.hpp"), []byte(strings.Join(hF, "")), 0644)
