@@ -8,8 +8,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"strings"
 	"sort"
+	"strings"
 )
 
 type BlockInfo struct {
@@ -22,14 +22,15 @@ type BlockAnalysis struct {
 	GasCost         int
 	StackReq        int
 	StackMaxGrowth  int
-	StackChange     int
-	BeginBlockIndex int
+	StackChange     int // the accumuluated StackChange of seen instructions
+	BeginBlockIndex int // the starting position
 }
 
 func NewBlockAnalysis(index int) BlockAnalysis {
 	return BlockAnalysis{BeginBlockIndex: index}
 }
 
+// Stop analyzing and get a compact BlockInfo
 func (ba *BlockAnalysis) Close() BlockInfo {
 	return BlockInfo{
 		GasCost:        uint32(ba.GasCost),
@@ -38,6 +39,8 @@ func (ba *BlockAnalysis) Close() BlockInfo {
 	}
 }
 
+// Some miscellaneous data using during an instruction's execution
+// C++ code can use union to reduce the space requirement. In golang we just list them all
 type Instruction struct {
 	PC             int
 	OpCode         int
@@ -47,6 +50,7 @@ type Instruction struct {
 	Block          BlockInfo
 }
 
+// For PUSH9~PUSH32
 func (i *Instruction) SetPushValue(bz []byte) {
 	var b32 [32]byte
 	copy(b32[32-len(bz):], bz)
@@ -59,6 +63,7 @@ func (i *Instruction) SetPushValue(bz []byte) {
 
 type AdvancedCodeAnalysis struct {
 	InstrList       []*Instruction
+	// the following two fields contain the same targets
 	JumpdestTargets []int
 	TargetsSet      map[int]struct{}
 }
@@ -75,7 +80,7 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 
 	analysis.TargetsSet = make(map[int]struct{})
 	analysis.InstrList = make([]*Instruction, 0, len(codeArr)+1)
-	instr := &Instruction{OpCode: OPX_BEGINBLOCK, PC: -1}
+	instr := &Instruction{OpCode: OPX_BEGINBLOCK, PC: -1} // for the first basic block
 	analysis.InstrList = append(analysis.InstrList, instr)
 
 	block := NewBlockAnalysis(0)
@@ -84,21 +89,24 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 		opCode := codeArr[codePos]
 		codePos++
 		opInfo := opTbl[opCode]
-		block.StackReq = max(block.StackReq, int(opInfo.StackReq)-block.StackChange)
+
+		block.StackReq = max(block.StackReq, int(opInfo.StackReq)-block.StackChange/*negative for pop*/)
 		block.StackChange += int(opInfo.StackChange)
+		//StackMaxGrowth is the peak value of StackChange
 		block.StackMaxGrowth = max(block.StackMaxGrowth, block.StackChange)
 		block.GasCost += int(opInfo.GasCost)
+
 		//fmt.Printf("Now pos %d GasCost %d %d\n", codePos-1, block.GasCost, opInfo.GasCost)
 		if opCode == OP_JUMPDEST {
 			analysis.JumpdestTargets = append(analysis.JumpdestTargets, codePos-1)
 			analysis.TargetsSet[codePos-1] = struct{}{}
 		} else {
-			instr := &Instruction{OpCode: int(opCode), PC: codePos-1}
+			instr := &Instruction{OpCode: int(opCode), PC: codePos - 1}
 			analysis.InstrList = append(analysis.InstrList, instr)
 		}
 
 		instr = analysis.InstrList[len(analysis.InstrList)-1]
-		isTerminator := false
+		isTerminator := false // does it terminate a basic block?
 		switch opCode {
 		case OP_JUMP, OP_JUMPI, OP_STOP, OP_RETURN, OP_REVERT, OP_SELFDESTRUCT:
 			isTerminator = true
@@ -106,8 +114,8 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 			OP_PUSH5, OP_PUSH6, OP_PUSH7, OP_PUSH8:
 			pushSize := opCode - OP_PUSH1 + 1
 			var data [8]byte
-			copy(data[8-int(pushSize):], codeArr[codePos : codePos+int(pushSize)])
-			instr.SmallPushValue = binary.BigEndian.Uint64(data[:])
+			copy(data[8-int(pushSize):], codeArr[codePos:codePos+int(pushSize)])
+			instr.SmallPushValue = binary.BigEndian.Uint64(data[:]) // param used during execution
 			//fmt.Printf("Here %d %#v %d\n", pushSize, data[:], instr.SmallPushValue)
 			codePos += int(pushSize)
 		case OP_PUSH9, OP_PUSH10, OP_PUSH11, OP_PUSH12,
@@ -117,30 +125,31 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 			OP_PUSH25, OP_PUSH26, OP_PUSH27, OP_PUSH28,
 			OP_PUSH29, OP_PUSH30, OP_PUSH31, OP_PUSH32:
 			pushSize := opCode - OP_PUSH1 + 1
-			instr.SetPushValue(codeArr[codePos : codePos+int(pushSize)])
+			instr.SetPushValue(codeArr[codePos : codePos+int(pushSize)]) // param used during execution
 			codePos += int(pushSize)
 		case OP_GAS, OP_CALL, OP_CALLCODE, OP_DELEGATECALL, OP_STATICCALL,
 			OP_CREATE, OP_CREATE2, OP_SSTORE:
-			instr.Number = block.GasCost
+			instr.Number = block.GasCost // param used during execution
 		case OP_PC:
-			instr.Number = codePos - 1
+			instr.Number = codePos - 1 // param used during execution
 		}
 
-		lastIdx := len(analysis.InstrList)-2
+		// Fuse a PUSH1~3 instruction and a JUMP/JUMPI instruction, such that we know the target during compilation
+		lastIdx := len(analysis.InstrList) - 2
 		if (opCode == OP_JUMP || opCode == OP_JUMPI) && codePos >= 2 {
 			last := analysis.InstrList[lastIdx]
-			if OP_PUSH1 <= last.OpCode && last.OpCode <= OP_PUSH3 && last.SmallPushValue != 0 {
+			if (OP_PUSH1 <= last.OpCode && last.OpCode <= OP_PUSH3) && last.SmallPushValue != 0 {
 				instr.Number = int(last.SmallPushValue)
 				analysis.InstrList[lastIdx].OpCode = NOP
 			}
 		}
 
 		if isTerminator || (codePos < len(codeArr) && codeArr[codePos] == OP_JUMPDEST) {
-			analysis.InstrList[block.BeginBlockIndex].Block = block.Close()
+			analysis.InstrList[block.BeginBlockIndex].Block = block.Close() //close the last basic block
 			//fmt.Printf("At Close %d %#v\n", block.BeginBlockIndex, analysis.InstrList[block.BeginBlockIndex].Block)
 			instr := &Instruction{OpCode: OPX_BEGINBLOCK, PC: codePos}
 			analysis.InstrList = append(analysis.InstrList, instr)
-			block = NewBlockAnalysis(len(analysis.InstrList) - 1)
+			block = NewBlockAnalysis(len(analysis.InstrList) - 1) // open a new block
 		}
 	}
 	// Save current block.
@@ -155,7 +164,7 @@ func (analysis AdvancedCodeAnalysis) Dump(name string, fout io.Writer) {
 	wr(fout, fmt.Sprintf(`#include <memory>
 #include <iostream>
 #include "instrexe.hpp"
-extern "C" {
+extern "C" { // declare the execute function with C linkage
 evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;
 }
@@ -167,11 +176,12 @@ evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evm
     evmone::instruction* next_instr = 1 + &instr;
     size_t PC = ~size_t(0);
 `, name, name))
-	analysis.DumpAllInstr(fout);
-	analysis.DumpJumpTable(fout);
+	analysis.DumpAllInstr(fout)
+	analysis.DumpJumpTable(fout)
 	wr(fout, "}\n")
 }
 
+// The JumpTable is a PC-to-label table implemented with "switch"
 func (analysis AdvancedCodeAnalysis) DumpJumpTable(fout io.Writer) {
 	wr(fout, "JUMPTABLE:\n")
 	wr(fout, "switch(PC){\n")
@@ -193,7 +203,7 @@ ENDING:
 func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 	for _, instr := range analysis.InstrList {
 		if instr.OpCode == OP_JUMPDEST && instr.PC > 0 {
-			wr(fout, "L%05d:\n", instr.PC)
+			wr(fout, "L%05d:\n", instr.PC) // a label at the beginning of a basic block
 		}
 		if instr.OpCode == NOP {
 			wr(fout, "// pc=%d NOP\n", instr.PC)
@@ -202,14 +212,14 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			wr(fout, "// pc=%d op=%d (%s)\n", instr.PC, instr.OpCode, TraitsTable[instr.OpCode].Name)
 			//wr(fout, "std::cout<<\"pc=%d gas 0x\"<<std::hex<<state->gas_left<<std::endl;\n", instr.PC)
 		}
-		if instr.OpCode == OP_JUMP && instr.Number != 0 { //Known target
+		if instr.OpCode == OP_JUMP && instr.Number != 0 { //Known target, for an unconditional jump
 			if _, ok := analysis.TargetsSet[instr.Number]; ok {
 				wr(fout, "goto L%05d;\n", instr.Number)
 			} else {
 				wr(fout, "state->exit(EVMC_BAD_JUMP_DESTINATION); goto ENDING;//%05d", instr.Number)
 			}
 		}
-		if instr.OpCode == OP_JUMPI && instr.Number != 0 { //Known target
+		if instr.OpCode == OP_JUMPI && instr.Number != 0 { //Known target, for a conditional jump
 			wr(fout, "if(test_jump_cond(*state)) {\n")
 			if _, ok := analysis.TargetsSet[instr.Number]; ok {
 				wr(fout, "  goto L%05d;\n", instr.Number)
@@ -218,16 +228,17 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			}
 			wr(fout, "}\n")
 		}
-		if instr.OpCode == OP_JUMP && instr.Number == 0 { //Unknown target
+		if instr.OpCode == OP_JUMP && instr.Number == 0 { //Unknown target, for an unconditional jump
 			wr(fout, "PC=pop_target_pc(*state);\ngoto JUMPTABLE;\n")
 		}
-		if instr.OpCode == OP_JUMPI && instr.Number == 0 { //Unknown target
+		if instr.OpCode == OP_JUMPI && instr.Number == 0 { //Unknown target, for a conditional jump
 			wr(fout, "PC=(get_target_pc(*state));\n")
-			wr(fout, "if((~PC)!=0) goto JUMPTABLE;\n")
+			wr(fout, "if((~PC)!=0) goto JUMPTABLE;\n") // an all-ones PC means "don't jump"
 		}
 		if instr.OpCode == OP_JUMP || instr.OpCode == OP_JUMPI {
 			continue
 		}
+		// prepare some miscellaneous information for the instruction's execution
 		switch instr.OpCode {
 		case OPX_BEGINBLOCK:
 			wr(fout, "instr=instr_from_block(%d, %d, %d);\n", instr.Block.GasCost,
@@ -248,8 +259,9 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 		}
 		name := TraitsTable[instr.OpCode].Name
 		if t := TypeTable[instr.OpCode]; t == FullWithBreak || t == StateWithStatus {
+			// an instruction which may not return instr++
 			wr(fout, "if(next_instr!=maot%s(&instr, *state)) goto ENDING;\n", name)
-		} else if len(name) == 0 {
+		} else if len(name) == 0 { //undefined instruction
 			wr(fout, "evmone::op_undefined(&instr, *state);\ngoto ENDING;\n")
 		} else {
 			wr(fout, "maot%s(&instr, *state);\n", name)
@@ -278,6 +290,7 @@ func CodeToFile(rev int, codeArr []byte, name, fname string) {
 	}
 }
 
+// read files in "dir" and returns a "address-to-bytecode" map
 func readFiles(dir string) (codeMap map[string][]byte) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -302,14 +315,16 @@ func readFiles(dir string) (codeMap map[string][]byte) {
 	return
 }
 
+// hex address to a string literal which presents it
 func addr2str(addr string) string {
 	res := ""
-	for i := 0; i < len(addr); i+=2 {
-		res += "\\x"+addr[i:i+2]
+	for i := 0; i < len(addr); i += 2 {
+		res += "\\x" + addr[i:i+2]
 	}
 	return res
 }
 
+// generate the query_executor function, which maps <addr> to an execute_<addr> function
 func getQueryExecutorSrc(addrList []string) string {
 	lines := make([]string, 0, 100)
 	lines = append(lines, `
@@ -356,13 +371,13 @@ func getCompileScript(addrList []string) string {
 	lines = append(lines, "export MOEINGEVM="+os.Getenv("MOEINGEVM"))
 	cmd := "g++ -O3 -fPIC -std=c++17 -I $MOEINGEVM/evmwrap/evmone.release/ -I $MOEINGEVM/evmwrap/evmc/include/ -I $MOEINGEVM/evmwrap/intx/include -I $MOEINGEVM/evmwrap/keccak/include"
 	fileNames := make([]string, 0, len(addrList))
-	for _, addr := range addrList {
+	for _, addr := range addrList { // compile the files generated from bytecodes
 		lines = append(lines, "echo === "+addr+" ===")
 		lines = append(lines, cmd+" -c "+addr+".cpp")
 		fileNames = append(fileNames, addr+".o")
 	}
 	lines = append(lines, cmd+" -c instrexe.cpp")
-	last := cmd+" -shared -fvisibility=hidden -o libevmaot.so query_executor.cpp instrexe.o "+strings.Join(fileNames, " ")
+	last := cmd + " -shared -fvisibility=hidden -o libevmaot.so query_executor.cpp instrexe.o " + strings.Join(fileNames, " ") // we use -fvisibility=hidden to hide unnecessary functions
 	lines = append(lines, last)
 	return strings.Join(lines, "\n")
 }
@@ -393,4 +408,3 @@ func AotCompile(rev int, inDir string, outDir string) {
 		panic(err)
 	}
 }
-

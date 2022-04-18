@@ -19,12 +19,16 @@ const (
 	NOP       = -2
 	Undefined = -1
 
-	StackOp         = byte(16)
-	StateOnly       = byte(17)
-	StateWithStatus = byte(18)
-	Full            = byte(19)
-	FullWithBreak   = byte(20)
+	// instructions implemented with templates
+	StackOp         = byte(16) // inline void add(Stack& stack) noexcept
+	StateOnly       = byte(17) // inline void address(ExecutionState& state) noexcept
+	StateWithStatus = byte(18) // inline evmc_status_code balance(ExecutionState& state) noexcept
+
+	// const instruction* op_pc(const instruction* instr, AdvancedExecutionState& state) noexcept
+	Full            = byte(19) // always returns instr++
+	FullWithBreak   = byte(20) // may return state.exit(status)
 	Jump            = byte(21)
+
 	Inline          = byte(128)
 
 	EVMC_FRONTIER          = 0
@@ -186,23 +190,26 @@ const (
 	OP_RETURN       = 0xf3
 	OP_DELEGATECALL = 0xf4
 	OP_CREATE2      = 0xf5
-
-	OP_STATICCALL = 0xfa
+	OP_STATICCALL   = 0xfa
 
 	OP_REVERT       = 0xfd
 	OP_INVALID      = 0xfe
 	OP_SELFDESTRUCT = 0xff
 )
 
+// basic traits of instructions, which are independent to VM versions
 type Traits struct {
 	Name        string
 	StackReq    int16
-	StackChange int16
+	StackChange int16 //postive for push, negative for pop
 }
 
+// The entry of OpTable. One OpTable for each VM version
 type OpTableEntry struct {
-	FuncName    string
-	GasCost     uint32
+	FuncName    string // copied from FuncNameTable
+	GasCost     uint32 // copied from GasCostTable
+
+	// following information are copied from TraitsTable (so independent to VM versions)
 	StackReq    int16
 	StackChange int16
 }
@@ -225,6 +232,7 @@ func init() {
 	}
 }
 
+// For each VM version, build a table show each instruction's gas cost
 func getGasCostTable() (table [11][256]int) {
 	for i := 0; i < 256; i++ {
 		table[EVMC_FRONTIER][i] = Undefined //?
@@ -515,6 +523,7 @@ func getTraitsTable() (table [256]Traits) {
 	return
 }
 
+// names of the C++ functions that implement instructions. 
 func getFuncNameTable() (table [256]string) {
 	table[OP_STOP] = "op_stop"
 	table[OP_ADD] = "op<evmone::add>"
@@ -723,12 +732,14 @@ func getInstrTypeTable() (table [256]byte) {
 	table[OP_STATICCALL] = Full
 	table[OP_REVERT] = Full
 	table[OP_INVALID] = Full
-	table[OP_SELFDESTRUCT] = Full
+	table[OP_SELFDESTRUCT] = StateWithStatus
+	for op := OP_PUSH1; op <= OP_SWAP16; op++ {// PUSH DUP SWAP
+		table[op] = Inline
+	}
 	return
 }
 
-
-
+// Dump two files: instrexe.hpp and instrexe.cpp. They have an implementation for each instruction
 func DumpInstrExeFiles(dir string) {
 	opTbl := OpTables[EVMC_ISTANBUL]
 	hF := []string{`#pragma once
@@ -737,21 +748,21 @@ func DumpInstrExeFiles(dir string) {
 
 namespace evmone
 {
-template <void InstrFn(Stack&)>
+template <void InstrFn(Stack&)> // For StackOp
 inline const instruction* op(const instruction* instr, AdvancedExecutionState& state) noexcept
 {
     InstrFn(state.stack);
     return ++instr;
 }
 
-template <void InstrFn(ExecutionState&)>
+template <void InstrFn(ExecutionState&)> // For StateOnly
 inline const instruction* op(const instruction* instr, AdvancedExecutionState& state) noexcept
 {
     InstrFn(state);
     return ++instr;
 }
 
-template <evmc_status_code InstrFn(ExecutionState&)>
+template <evmc_status_code InstrFn(ExecutionState&)> // For StateWithStatus
 inline const instruction* op(const instruction* instr, AdvancedExecutionState& state) noexcept
 {
     const auto status_code = InstrFn(state);
@@ -768,13 +779,13 @@ inline const instruction* op_pc(const instruction* instr, AdvancedExecutionState
 
 inline const instruction* op_push_small(const instruction* instr, AdvancedExecutionState& state) noexcept
 {
-    state.stack.push(instr->arg.small_push_value);
+    state.stack.push(instr->arg.small_push_value); // no more than 64 bits
     return ++instr;
 }
 
 inline const instruction* op_push_full(const instruction* instr, AdvancedExecutionState& state) noexcept
 {
-    state.stack.push(*instr->arg.push_value);
+    state.stack.push(*instr->arg.push_value); // more than 64 bits
     return ++instr;
 }
 
@@ -789,8 +800,8 @@ inline size_t pop_target_pc(AdvancedExecutionState& state) noexcept {
 inline size_t get_target_pc(AdvancedExecutionState& state) noexcept {
 	const auto pc = state.stack.pop();
 	const auto cond = state.stack.pop();
-	if(cond != 0) return ~size_t(0);
-	return static_cast<size_t>(pc);
+	if(cond == 0) return ~size_t(0);  // return all-ones PC indicating no-jump
+	return static_cast<size_t>(pc); // return the jump target
 }
 
 const instruction* op_stop(const instruction*, AdvancedExecutionState& state) noexcept;
@@ -808,6 +819,7 @@ const instruction* op_selfdestruct(const instruction*, AdvancedExecutionState& s
 const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionState& state) noexcept;
 }
 
+// build an evmone::instruction instance by filling its arg.block
 inline evmone::instruction instr_from_block(uint32_t gas_cost, int16_t stack_req, int16_t stack_max_growth) {
 	evmone::instruction instr(nullptr);
 	instr.arg.block.gas_cost = gas_cost;
@@ -815,16 +827,22 @@ inline evmone::instruction instr_from_block(uint32_t gas_cost, int16_t stack_req
 	instr.arg.block.stack_max_growth = stack_max_growth;
 	return instr;
 }
+
+// build an evmone::instruction instance by filling its arg.small_push_value
 inline evmone::instruction instr_from_push(uint64_t v) {
 	evmone::instruction instr(nullptr);
 	instr.arg.small_push_value = v;
 	return instr;
 }
+
+// build an evmone::instruction instance by filling its arg.push_value
 inline evmone::instruction instr_from_push(uint64_t n3, uint64_t n2, uint64_t n1, uint64_t n0) {
 	evmone::instruction instr(nullptr);
 	instr.arg.push_value = new intx::uint256;
 	return instr;
 }
+
+// build an evmone::instruction instance by filling its arg.number
 inline evmone::instruction instr_from_num(uint64_t n) {
 	evmone::instruction instr(nullptr);
 	instr.arg.number = n;
@@ -944,18 +962,18 @@ const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionSta
 `}
 	fFmt := "const evmone::instruction* maot%s(const evmone::instruction* instr, evmone::AdvancedExecutionState& state) noexcept"
 	for op := 0; op < 256; op++ {
-		if len(TraitsTable[op].Name) == 0 || op == OP_JUMP || op == OP_JUMPI {
+		if len(TraitsTable[op].Name) == 0 // undefined instruction
+		|| op == OP_JUMP || op == OP_JUMPI { // JUMP&JUMPI need special handling
 			continue // ignore such op code
 		}
 		sec := fmt.Sprintf("// %d %s\n", op, TraitsTable[op].Name)
 		hF = append(hF, sec)
 		cF = append(cF, sec)
 		fStr := fmt.Sprintf(fFmt, TraitsTable[op].Name)
-		content := fStr+" {\nreturn evmone::"+
-		           opTbl[op].FuncName+"(instr, state);\n}\n"
-		if (TypeTable[op] & Inline) != 0 || (OP_PUSH1 <= op && op <= OP_SWAP16) {
+		content := fStr + " {\nreturn evmone::" + opTbl[op].FuncName + "(instr, state);\n}\n"
+		if (TypeTable[op]&Inline) != 0 { // inline function has its implementation in header file
 			hF = append(hF, "inline "+content+";")
-		} else {
+		} else { // header file has only declarations and implementations are in cpp file
 			hF = append(hF, fStr+";\n")
 			cF = append(cF, content)
 		}
