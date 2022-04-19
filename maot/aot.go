@@ -168,6 +168,13 @@ extern "C" { // declare the execute function with C linkage
 evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;
 }
+
+void show_stack(evmone::AdvancedExecutionState& state) {
+    for(int i = state.stack.size() - 1; i >= 0; i--) {
+        std::cout<<"0x"<<intx::hex(state.stack[i])<<std::endl;
+    }
+}
+
 evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept
 {
@@ -210,7 +217,9 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			continue
 		} else {
 			wr(fout, "// pc=%d op=%d (%s)\n", instr.PC, instr.OpCode, TraitsTable[instr.OpCode].Name)
-			//wr(fout, "std::cout<<\"pc=%d gas 0x\"<<std::hex<<state->gas_left<<std::endl;\n", instr.PC)
+			//wr(fout, "std::cout<<\"pc=%d %s gas 0x\"<<std::hex<<state->gas_left<<std::endl;\n",
+			//	instr.PC, TraitsTable[instr.OpCode].Name)
+			//wr(fout, "show_stack(*state);\n")
 		}
 		if instr.OpCode == OP_JUMP && instr.Number != 0 { //Known target, for an unconditional jump
 			if _, ok := analysis.TargetsSet[instr.Number]; ok {

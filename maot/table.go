@@ -838,7 +838,7 @@ inline evmone::instruction instr_from_push(uint64_t v) {
 // build an evmone::instruction instance by filling its arg.push_value
 inline evmone::instruction instr_from_push(uint64_t n3, uint64_t n2, uint64_t n1, uint64_t n0) {
 	evmone::instruction instr(nullptr);
-	instr.arg.push_value = new intx::uint256;
+	instr.arg.push_value = new intx::uint256(n0, n1, n2, n3);
 	return instr;
 }
 
@@ -962,8 +962,8 @@ const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionSta
 `}
 	fFmt := "const evmone::instruction* maot%s(const evmone::instruction* instr, evmone::AdvancedExecutionState& state) noexcept"
 	for op := 0; op < 256; op++ {
-		if len(TraitsTable[op].Name) == 0 // undefined instruction
-		|| op == OP_JUMP || op == OP_JUMPI { // JUMP&JUMPI need special handling
+		if len(TraitsTable[op].Name) == 0 ||// undefined instruction
+		op == OP_JUMP || op == OP_JUMPI { // JUMP&JUMPI need special handling
 			continue // ignore such op code
 		}
 		sec := fmt.Sprintf("// %d %s\n", op, TraitsTable[op].Name)
