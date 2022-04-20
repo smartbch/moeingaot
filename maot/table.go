@@ -723,15 +723,15 @@ func getInstrTypeTable() (table [256]byte) {
 	table[OP_LOG2] = StateWithStatus
 	table[OP_LOG3] = StateWithStatus
 	table[OP_LOG4] = StateWithStatus
-	table[OP_CREATE] = Full
-	table[OP_CALL] = Full
-	table[OP_CALLCODE] = Full
-	table[OP_RETURN] = Full
-	table[OP_DELEGATECALL] = Full
-	table[OP_CREATE2] = Full
-	table[OP_STATICCALL] = Full
-	table[OP_REVERT] = Full
-	table[OP_INVALID] = Full
+	table[OP_CREATE] = FullWithBreak
+	table[OP_CALL] = FullWithBreak
+	table[OP_CALLCODE] = FullWithBreak
+	table[OP_RETURN] = FullWithBreak
+	table[OP_DELEGATECALL] = FullWithBreak
+	table[OP_CREATE2] = FullWithBreak
+	table[OP_STATICCALL] = FullWithBreak
+	table[OP_REVERT] = FullWithBreak
+	table[OP_INVALID] = FullWithBreak
 	table[OP_SELFDESTRUCT] = StateWithStatus
 	for op := OP_PUSH1; op <= OP_SWAP16; op++ {// PUSH DUP SWAP
 		table[op] = Inline
@@ -745,6 +745,8 @@ func DumpInstrExeFiles(dir string) {
 	hF := []string{`#pragma once
 #include "analysis.hpp"
 #include "instructions.hpp"
+
+void show_stack(evmone::AdvancedExecutionState& state);
 
 namespace evmone
 {
@@ -850,7 +852,15 @@ inline evmone::instruction instr_from_num(uint64_t n) {
 }
 `}
 	cF := []string{`
+#include <iostream>
 #include "instrexe.hpp"
+
+void show_stack(evmone::AdvancedExecutionState& state) {
+    for(int i = state.stack.size() - 1; i >= 0; i--) {
+        std::cout<<"0x"<<intx::hex(state.stack[i])<<std::endl;
+    }
+}
+
 namespace evmone
 {
 const instruction* op_stop(const instruction*, AdvancedExecutionState& state) noexcept

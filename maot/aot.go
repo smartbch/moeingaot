@@ -161,6 +161,7 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 }
 
 func (analysis AdvancedCodeAnalysis) Dump(name string, fout io.Writer) {
+	enterInfo := "" //fmt.Sprintf("\n    std::cout<<\"enter %s\"<<std::endl;", name) // for debug
 	wr(fout, fmt.Sprintf(`#include <memory>
 #include <iostream>
 #include "instrexe.hpp"
@@ -169,20 +170,14 @@ evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evm
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept;
 }
 
-void show_stack(evmone::AdvancedExecutionState& state) {
-    for(int i = state.stack.size() - 1; i >= 0; i--) {
-        std::cout<<"0x"<<intx::hex(state.stack[i])<<std::endl;
-    }
-}
-
 evmc_result execute_%s(evmc_vm* /*unused*/, const evmc_host_interface* host, evmc_host_context* ctx,
     evmc_revision rev, const evmc_message* msg, const uint8_t* code, size_t code_size) noexcept
-{
+{%s
     auto state = std::make_unique<evmone::AdvancedExecutionState>(*msg, rev, *host, ctx, code, code_size);
     evmone::instruction instr(nullptr);
     evmone::instruction* next_instr = 1 + &instr;
     size_t PC = ~size_t(0);
-`, name, name))
+`, name, name, enterInfo))
 	analysis.DumpAllInstr(fout)
 	analysis.DumpJumpTable(fout)
 	wr(fout, "}\n")
@@ -208,6 +203,7 @@ ENDING:
 }
 
 func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
+	wr(fout, "L00000:\n")
 	for _, instr := range analysis.InstrList {
 		if instr.OpCode == OP_JUMPDEST && instr.PC > 0 {
 			wr(fout, "L%05d:\n", instr.PC) // a label at the beginning of a basic block
@@ -217,15 +213,16 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			continue
 		} else {
 			wr(fout, "// pc=%d op=%d (%s)\n", instr.PC, instr.OpCode, TraitsTable[instr.OpCode].Name)
-			//wr(fout, "std::cout<<\"pc=%d %s gas 0x\"<<std::hex<<state->gas_left<<std::endl;\n",
-			//	instr.PC, TraitsTable[instr.OpCode].Name)
+			//wr(fout, "std::cout<<\"====*====\"<<std::endl;")
+			//wr(fout, "std::cout<<\"PC:%d OP: %s %d gas 0x\"<<std::hex<<state->gas_left<<std::endl;\n",
+			//	instr.PC, TraitsTable[instr.OpCode].Name, instr.OpCode) // for debug
 			//wr(fout, "show_stack(*state);\n")
 		}
 		if instr.OpCode == OP_JUMP && instr.Number != 0 { //Known target, for an unconditional jump
 			if _, ok := analysis.TargetsSet[instr.Number]; ok {
 				wr(fout, "goto L%05d;\n", instr.Number)
 			} else {
-				wr(fout, "state->exit(EVMC_BAD_JUMP_DESTINATION); goto ENDING;//%05d", instr.Number)
+				wr(fout, "state->exit(EVMC_BAD_JUMP_DESTINATION); goto ENDING;//%05d\n", instr.Number)
 			}
 		}
 		if instr.OpCode == OP_JUMPI && instr.Number != 0 { //Known target, for a conditional jump
@@ -233,7 +230,7 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			if _, ok := analysis.TargetsSet[instr.Number]; ok {
 				wr(fout, "  goto L%05d;\n", instr.Number)
 			} else {
-				wr(fout, "  state->exit(EVMC_BAD_JUMP_DESTINATION); goto ENDING;//%05d", instr.Number)
+				wr(fout, "  state->exit(EVMC_BAD_JUMP_DESTINATION); goto ENDING;//%05d\n", instr.Number)
 			}
 			wr(fout, "}\n")
 		}
@@ -267,7 +264,7 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			wr(fout, "instr=instr_from_num(%d);\n", instr.Number)
 		}
 		name := TraitsTable[instr.OpCode].Name
-		if t := TypeTable[instr.OpCode]; t == FullWithBreak || t == StateWithStatus {
+		if t := TypeTable[instr.OpCode]&^Inline; t == FullWithBreak || t == StateWithStatus {
 			// an instruction which may not return instr++
 			wr(fout, "if(next_instr!=maot%s(&instr, *state)) goto ENDING;\n", name)
 		} else if len(name) == 0 { //undefined instruction
