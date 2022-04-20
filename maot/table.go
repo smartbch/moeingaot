@@ -25,11 +25,11 @@ const (
 	StateWithStatus = byte(18) // inline evmc_status_code balance(ExecutionState& state) noexcept
 
 	// const instruction* op_pc(const instruction* instr, AdvancedExecutionState& state) noexcept
-	Full            = byte(19) // always returns instr++
-	FullWithBreak   = byte(20) // may return state.exit(status)
-	Jump            = byte(21)
+	Full          = byte(19) // always returns instr++
+	FullWithBreak = byte(20) // may return state.exit(status)
+	Jump          = byte(21)
 
-	Inline          = byte(128)
+	Inline = byte(128)
 
 	EVMC_FRONTIER          = 0
 	EVMC_HOMESTEAD         = 1
@@ -206,8 +206,8 @@ type Traits struct {
 
 // The entry of OpTable. One OpTable for each VM version
 type OpTableEntry struct {
-	FuncName    string // copied from FuncNameTable
-	GasCost     uint32 // copied from GasCostTable
+	FuncName string // copied from FuncNameTable
+	GasCost  uint32 // copied from GasCostTable
 
 	// following information are copied from TraitsTable (so independent to VM versions)
 	StackReq    int16
@@ -523,7 +523,7 @@ func getTraitsTable() (table [256]Traits) {
 	return
 }
 
-// names of the C++ functions that implement instructions. 
+// names of the C++ functions that implement instructions.
 func getFuncNameTable() (table [256]string) {
 	table[OP_STOP] = "op_stop"
 	table[OP_ADD] = "op<evmone::add>"
@@ -733,7 +733,7 @@ func getInstrTypeTable() (table [256]byte) {
 	table[OP_REVERT] = FullWithBreak
 	table[OP_INVALID] = FullWithBreak
 	table[OP_SELFDESTRUCT] = StateWithStatus
-	for op := OP_PUSH1; op <= OP_SWAP16; op++ {// PUSH DUP SWAP
+	for op := OP_PUSH1; op <= OP_SWAP16; op++ { // PUSH DUP SWAP
 		table[op] = Inline
 	}
 	return
@@ -972,8 +972,8 @@ const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionSta
 `}
 	fFmt := "const evmone::instruction* maot%s(const evmone::instruction* instr, evmone::AdvancedExecutionState& state) noexcept"
 	for op := 0; op < 256; op++ {
-		if len(TraitsTable[op].Name) == 0 ||// undefined instruction
-		op == OP_JUMP || op == OP_JUMPI { // JUMP&JUMPI need special handling
+		if len(TraitsTable[op].Name) == 0 || // undefined instruction
+			op == OP_JUMP || op == OP_JUMPI { // JUMP&JUMPI need special handling
 			continue // ignore such op code
 		}
 		sec := fmt.Sprintf("// %d %s\n", op, TraitsTable[op].Name)
@@ -981,7 +981,7 @@ const instruction* opx_beginblock(const instruction* instr, AdvancedExecutionSta
 		cF = append(cF, sec)
 		fStr := fmt.Sprintf(fFmt, TraitsTable[op].Name)
 		content := fStr + " {\nreturn evmone::" + opTbl[op].FuncName + "(instr, state);\n}\n"
-		if (TypeTable[op]&Inline) != 0 { // inline function has its implementation in header file
+		if (TypeTable[op] & Inline) != 0 { // inline function has its implementation in header file
 			hF = append(hF, "inline "+content+";")
 		} else { // header file has only declarations and implementations are in cpp file
 			hF = append(hF, fStr+";\n")

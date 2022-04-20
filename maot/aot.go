@@ -62,7 +62,7 @@ func (i *Instruction) SetPushValue(bz []byte) {
 }
 
 type AdvancedCodeAnalysis struct {
-	InstrList       []*Instruction
+	InstrList []*Instruction
 	// the following two fields contain the same targets
 	JumpdestTargets []int
 	TargetsSet      map[int]struct{}
@@ -90,7 +90,7 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 		codePos++
 		opInfo := opTbl[opCode]
 
-		block.StackReq = max(block.StackReq, int(opInfo.StackReq)-block.StackChange/*negative for pop*/)
+		block.StackReq = max(block.StackReq, int(opInfo.StackReq)-block.StackChange /*negative for pop*/)
 		block.StackChange += int(opInfo.StackChange)
 		//StackMaxGrowth is the peak value of StackChange
 		block.StackMaxGrowth = max(block.StackMaxGrowth, block.StackChange)
@@ -112,7 +112,10 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 			isTerminator = true
 		case OP_PUSH1, OP_PUSH2, OP_PUSH3, OP_PUSH4,
 			OP_PUSH5, OP_PUSH6, OP_PUSH7, OP_PUSH8:
-			pushSize := opCode - OP_PUSH1 + 1
+			pushSize := int(opCode-OP_PUSH1) + 1
+			if codePos+pushSize > len(codeArr) {
+				pushSize = len(codeArr) - codePos
+			}
 			var data [8]byte
 			copy(data[8-int(pushSize):], codeArr[codePos:codePos+int(pushSize)])
 			instr.SmallPushValue = binary.BigEndian.Uint64(data[:]) // param used during execution
@@ -124,9 +127,13 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 			OP_PUSH21, OP_PUSH22, OP_PUSH23, OP_PUSH24,
 			OP_PUSH25, OP_PUSH26, OP_PUSH27, OP_PUSH28,
 			OP_PUSH29, OP_PUSH30, OP_PUSH31, OP_PUSH32:
-			pushSize := opCode - OP_PUSH1 + 1
-			instr.SetPushValue(codeArr[codePos : codePos+int(pushSize)]) // param used during execution
-			codePos += int(pushSize)
+			pushSize := int(opCode-OP_PUSH1) + 1
+			end := codePos + pushSize
+			if end > len(codeArr) {
+				end = len(codeArr)
+			}
+			instr.SetPushValue(codeArr[codePos:end]) // param used during execution
+			codePos = end
 		case OP_GAS, OP_CALL, OP_CALLCODE, OP_DELEGATECALL, OP_STATICCALL,
 			OP_CREATE, OP_CREATE2, OP_SSTORE:
 			instr.Number = block.GasCost // param used during execution
@@ -264,7 +271,7 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			wr(fout, "instr=instr_from_num(%d);\n", instr.Number)
 		}
 		name := TraitsTable[instr.OpCode].Name
-		if t := TypeTable[instr.OpCode]&^Inline; t == FullWithBreak || t == StateWithStatus {
+		if t := TypeTable[instr.OpCode] &^ Inline; t == FullWithBreak || t == StateWithStatus {
 			// an instruction which may not return instr++
 			wr(fout, "if(next_instr!=maot%s(&instr, *state)) goto ENDING;\n", name)
 		} else if len(name) == 0 { //undefined instruction
