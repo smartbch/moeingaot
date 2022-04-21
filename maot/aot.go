@@ -168,7 +168,7 @@ func Analyze(rev int, codeArr []byte) (analysis AdvancedCodeAnalysis) {
 }
 
 func (analysis AdvancedCodeAnalysis) Dump(name string, fout io.Writer) {
-	enterInfo := "" //fmt.Sprintf("\n    std::cout<<\"enter %s\"<<std::endl;", name) // for debug
+	enterInfo := fmt.Sprintf("\n    std::cout<<\"enter %s\"<<std::endl;", name) // for debug
 	wr(fout, fmt.Sprintf(`#include <memory>
 #include <iostream>
 #include "instrexe.hpp"
@@ -220,10 +220,10 @@ func (analysis AdvancedCodeAnalysis) DumpAllInstr(fout io.Writer) {
 			continue
 		} else {
 			wr(fout, "// pc=%d op=%d (%s)\n", instr.PC, instr.OpCode, TraitsTable[instr.OpCode].Name)
-			//wr(fout, "std::cout<<\"====*====\"<<std::endl;")
-			//wr(fout, "std::cout<<\"PC:%d OP: %s %d gas 0x\"<<std::hex<<state->gas_left<<std::endl;\n",
-			//	instr.PC, TraitsTable[instr.OpCode].Name, instr.OpCode) // for debug
-			//wr(fout, "show_stack(*state);\n")
+			wr(fout, "std::cout<<\"====*====\"<<std::endl;")
+			wr(fout, "std::cout<<\"PC:%d OP: %s %d gas 0x\"<<std::hex<<state->gas_left<<std::endl;\n",
+				instr.PC, TraitsTable[instr.OpCode].Name, instr.OpCode) // for debug
+			wr(fout, "show_stack(*state);\n")
 		}
 		if instr.OpCode == OP_JUMP && instr.Number != 0 { //Known target, for an unconditional jump
 			if _, ok := analysis.TargetsSet[instr.Number]; ok {
@@ -363,7 +363,7 @@ evmc_execute_fn query_executor(const evmc_address* destination) {
 	s := fmt.Sprintf("\t\tm.reserve(%d);", len(addrList))
 	lines = append(lines, s)
 	for _, addr := range addrList {
-		s = fmt.Sprintf("\t\tm.insert(std::make_pair<std::string, evmc_execute_fn>(\"%s\", execute_%s));",
+		s = fmt.Sprintf("\t\tm.emplace(std::string(\"%s\", 20), execute_%s);",
 			addr2str(addr), addr)
 		lines = append(lines, s)
 	}
